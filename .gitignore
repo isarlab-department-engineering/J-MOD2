@@ -24,7 +24,6 @@ jmod2_unreal_09/*
 jmod2_unreal_14/*
 mean_files/*
 baselines/*
-utils/*
 # test-related
 .coverage
 .cache
