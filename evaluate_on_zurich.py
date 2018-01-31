@@ -12,7 +12,7 @@ model_name = 'jmod2'
 
 model, detector_only= EvaluationUtils.load_model(model_name, config)
 #Download and zip the dataset from
-main_data_dir = "/home/isarlab/Datasets/zurich_data"
+main_data_dir = "data/zurich_data"
 hdf5_file = main_data_dir + "/seq_%02d.h5"
 
 showImages = True

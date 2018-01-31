@@ -18,7 +18,7 @@ net_arg = add_argument_group('Network')
 # Data
 data_arg = add_argument_group('Data')
 
-data_arg.add_argument('--data_set_dir', type=str, default='/home/isarlab/Datasets/UnrealDataset')
+data_arg.add_argument('--data_set_dir', type=str, default='data/UnrealDataset')
 #data_arg.add_argument('--dataset', type=str, default='UnrealDataset', choices=['UnrealDataset', 'Satellite'])
 data_arg.add_argument('--use_subsampled', type=str2bool, default=False)
 data_arg.add_argument('--compute_mean', type=str2bool, default=False)

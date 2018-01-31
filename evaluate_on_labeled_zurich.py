@@ -6,12 +6,12 @@ from lib.Evaluators import JMOD2Stats
 config, unparsed = get_config()
 
 #Edit model_name to choose model between ['jmod2','cadena','detector','depth','eigen']
-model_name = 'cadena'
+model_name = 'jmod2'
 
 model, detector_only = EvaluationUtils.load_model(model_name, config)
 
 #Download the file from
-dataset_file_path = "/home/isarlab/Datasets/zurich_data/zurich_forest_dataset_with_obs_label.npy"
+dataset_file_path = "data/zurich_data/zurich_forest_dataset_with_obs_label.npy"
 dataset = np.load(dataset_file_path).item()
 
 len_data = len(dataset['images'])

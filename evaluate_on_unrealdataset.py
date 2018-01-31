@@ -29,7 +29,7 @@ def preprocess_data(rgb, gt, seg, w=256, h=160, crop_w=0, crop_h=0, resize_only_
 config, unparsed = get_config()
 
 #Edit model_name to choose model between ['jmod2','cadena','detector','depth','eigen']
-model_name = 'cadena'
+model_name = 'jmod2'
 
 model, detector_only = EvaluationUtils.load_model(model_name, config)
 
