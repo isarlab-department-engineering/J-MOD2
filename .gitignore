@@ -1,0 +1,36 @@
+*.DS_Store
+*.pyc
+*.swp
+temp/*
+dist/*
+build/*
+weights/*
+data/*
+modelsFull/*
+docs/site/*
+docs/theme/*
+docs/sources/*
+tags
+examples/img/*
+logs/*
+results/*
+outputs/*
+paper_material/*
+depth_unreal_09/*
+depth_unreal_14/*
+detection_unreal_09/*
+detection_unreal_14/*
+jmod2_unreal_09/*
+jmod2_unreal_14/*
+mean_files/*
+baselines/*
+utils/*
+# test-related
+.coverage
+.cache
+
+# developer environments
+.idea
+
+*.csv
+*.bag
