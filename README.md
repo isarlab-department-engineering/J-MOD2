@@ -4,7 +4,7 @@ J-MOD2: Joint Monocular Obstacle Detection and Depth Estimation
 Test and training code of the paper: Mancini, Michele, et al. "J-MOD $^{2} $: Joint Monocular Obstacle Detection and Depth Estimation." International Conference on Robotics and Automation (ICRA) 2018.
 
 
-[Link to paper](https://arxiv.org/pdf/1709.08480.pdf "Paper PDF")
+[Link to paper](http://www.sira.diei.unipg.it/supplementary/jmod2_ral2018/JMOD2.pdf "Paper PDF")
 
 # Installation
 
@@ -25,7 +25,7 @@ Training and test code is provided for J-MOD2 and the baselines cited in the pap
 J-MOD2 trained weights on the UnrealDataset can be downloaded [here](http://www.sira.diei.unipg.it/supplementary/jmod2_ral2018/jmod2.hdf5)
 
 Baselines trained weights on the UnrealDataset (depth-only, detector, Eigen, Full-MAE, JRN) can be downloaded from [here](http://www.sira.diei.unipg.it/supplementary/jmod2_ral2018/jmod2_baselines.tar.gz)
-[NOTE: JRN code will be soon provided in a different repository]
+[NOTE: JRN code will be provided soon in a different repository]
 The code expects to find the files in a folder called 'weights' inside the J-MOD2 root directory.
 
 # Usage: testing on the UnrealDataset
@@ -87,4 +87,4 @@ need to edit some hardcoded values).
 
 Feel free to report any issue, I'm sure there are :). 
 
-Contact me at michele.mancini1989@gmail.com
+Contact: michele.mancini1989@gmail.com
