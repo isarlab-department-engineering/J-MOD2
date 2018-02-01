@@ -74,7 +74,7 @@ COMING SOON
 # Training
 
 The `train.py` performs training on the UnrealDataset according to the parameters in the `config.py` file.
-You can train different models by simpling editing the line `model = JMOD2(config)` accordingly.
+You can train different models by simply editing the line `model = JMOD2(config)` accordingly.
 
 If you wish to train the model on a different dataset, you will probably need to define
 new classes in the `Dataset.py`,`SampleType.py`,`DataGenerationStrategy.py` and `Sequence.py` files located in
