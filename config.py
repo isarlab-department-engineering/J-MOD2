@@ -30,12 +30,12 @@ data_arg.add_argument('--img_extension', type=str, default="png")
 #JMOD2 param
 jmod2_arg = add_argument_group('JMOD2')
 jmod2_arg.add_argument('--detector_confidence_thr', type=int, default=0.5)
+jmod2_arg.add_argument('--non-max_suppresion', type=str2bool, default=False)
 
 #CADENA param
 cad_arg = add_argument_group('Cadena')
 cad_arg.add_argument('--cadena_resize_out', type=str2bool, default=True)
 #Used for training only
-
 cad_arg.add_argument('--rgb_ae_channel_override', type=str2bool, default=False)
 cad_arg.add_argument('--rgb_ae_channel', type=int, default=2)
 
@@ -53,7 +53,9 @@ train_arg.add_argument('--num_epochs', type=int, default=100, help='')
 train_arg.add_argument('--random_seed', type=int, default=123, help='')
 train_arg.add_argument('--learning_rate', type=float, default=1e-4, help='')
 train_arg.add_argument('--weights_path', type=str, default="weights/jmod2.hdf5") #Used for finetuning or to resume training
-train_arg.add_argument('--resume_training',type=str2bool, default=False)
+train_arg.add_argument('--weights_path_vgg19', type=str, default="weights/vgg19_weights_tf_dim_ordering_tf_kernels_notop.h5")
+train_arg.add_argument('--resume_training', type=str2bool, default=False)
+train_arg.add_argument('--version_model', type=int, default=1)#1:original version J-MOD2
 
 # Misc
 misc_arg = add_argument_group('Misc')
@@ -61,8 +63,8 @@ misc_arg.add_argument('--is_deploy', type=str2bool, default=False, help='')
 misc_arg.add_argument('--log_step', type=int, default=20, help='')
 misc_arg.add_argument('--log_dir', type=str, default='logs') #DIRECTORY WHERE TO SAVE MODEL CHECKPOINTS
 misc_arg.add_argument('--debug', type=str2bool, default=True)
-misc_arg.add_argument('--gpu_memory_fraction', type=float, default=0.9)
-misc_arg.add_argument('--max_image_summary',type=int, default=4)
+misc_arg.add_argument('--gpu_memory_fraction', type=float, default=0.8)
+misc_arg.add_argument('--max_image_summary', type=int, default=4)
 
 def get_config():
 	config, unparsed = parser.parse_known_args()

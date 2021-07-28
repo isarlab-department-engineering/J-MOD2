@@ -102,10 +102,14 @@ for test_dir in test_dirs:
 		gt_obs = EvaluationUtils.get_obstacles_from_list(obstacles_list)
 
 		#Eliminate multiple detections
+		if config.non-max_suppresion:
+			best_detections_list = non_maximal_suppresion(results[1], iou_thresh=0.7)
+		else:
+			best_detections_list = results[1]
 
 		if showImages:
 			if results[1] is not None:
-				EvaluationUtils.show_detections(rgb_raw, results[1], gt_obs, file_name=index_str.zfill(5)+'.png', sleep_for=10)
+				EvaluationUtils.show_detections(rgb_raw, best_detections_list, gt_obs, file_name=index_str.zfill(5)+'.png', sleep_for=10)
 			if results[0] is not None:
 				EvaluationUtils.show_depth(rgb_raw, depth_raw, gt, file_name=index_str.zfill(5)+'.png', sleep_for=10)
 

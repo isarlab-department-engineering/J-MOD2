@@ -251,7 +251,7 @@ def yolo_v2_loss(y_true, y_pred):
 	loss_non_object = tf.reduce_sum(K.expand_dims(tf.square(conf_error), axis=-1) * (1. - conf_mask)) / batch_size
 
 	# total loss
-	loss = 1.0 * loss_object + 0.5 * loss_non_object + 5.0 * loss_xy + 5.0 * loss_wh + 2.5 * loss_mean + 2.5 * loss_var
+	loss = 1.0 * loss_object + 0.005 * loss_non_object + 3.5 * loss_xy + 3.5 * loss_wh + 1.0 * loss_mean + 1.0 * loss_var
 	
 	return loss
 
@@ -413,7 +413,7 @@ def yolo_nonobjconf_loss(y_true, y_pred):
 	loss_non_object = tf.reduce_sum(K.expand_dims(tf.square(conf_error), axis=-1) * (1. - conf_mask)) / batch_size
 
 	# total loss
-	loss = 0.5 * loss_non_object
+	loss = 0.005 * loss_non_object
 
 	return loss
 
@@ -425,7 +425,7 @@ def yolo_xy_loss(y_true, y_pred):
 	true_xy_tensor = y_true[:, :, :, :, 1:3] # relative position to the containing cell
 	pred_xy_tensor = K.sigmoid(y_pred[:, :, :, :, 1:3]) # relative to position to the containing cell
 	loss_xy = tf.reduce_sum(tf.square(true_xy_tensor - pred_xy_tensor) * coord_mask) / batch_size
-	return 5.0 * loss_xy
+	return 3.5 * loss_xy
 
 def yolo_wh_loss(y_true, y_pred):
 	batch_size = 64.0
@@ -438,7 +438,7 @@ def yolo_wh_loss(y_true, y_pred):
 	true_wh_tensor = y_true[:, :, :, :, 3:5] # relative to image shape
 	pred_wh_tensor = K.exp(y_pred[:, :, :, :, 3:5]) * K.reshape(anchors, [1, 1, 1, 2, 2]) # relative to image shape
 	loss_wh = tf.reduce_sum(tf.square(tf.sqrt(true_wh_tensor) - tf.sqrt(pred_wh_tensor)) * coord_mask) / batch_size
-	return 5.0 * loss_wh
+	return 3.5 * loss_wh
 
 def yolo_mean_loss(y_true, y_pred):
 	batch_size = 64.0
@@ -447,7 +447,7 @@ def yolo_mean_loss(y_true, y_pred):
 	true_m_tensor = K.expand_dims(y_true[:, :, :, :, 5], axis=-1)
 	pred_m_tensor = K.expand_dims(y_pred[:, :, :, :, 5], axis=-1)
 	loss_mean = tf.reduce_sum(tf.square(true_m_tensor - pred_m_tensor) * conf_mask) / batch_size
-	return 2.5 * loss_mean
+	return 1.0 * loss_mean
 
 def yolo_var_loss(y_true, y_pred):
 	batch_size = 64.0
@@ -456,4 +456,4 @@ def yolo_var_loss(y_true, y_pred):
 	true_v_tensor = K.expand_dims(y_true[:, :, :, :, 6], axis=-1)
 	pred_v_tensor = K.expand_dims(y_pred[:, :, :, :, 6], axis=-1)
 	loss_var = tf.reduce_sum(tf.square(true_v_tensor - pred_v_tensor) * conf_mask) / batch_size
-	return 2.5 * loss_var
+	return 1.0 * loss_var

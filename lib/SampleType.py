@@ -75,7 +75,7 @@ class Sample(object):
 			obstacles_label[int(parsed_obs[1]), int(parsed_obs[0]), best_iou_index, 3] = w # w
 			obstacles_label[int(parsed_obs[1]), int(parsed_obs[0]), best_iou_index, 4] = h # h
 			obstacles_label[int(parsed_obs[1]), int(parsed_obs[0]), best_iou_index, 5] = parsed_obs[6] # m
-			obstacles_label[int(parsed_obs[1]), int(parsed_obs[0]), best_iou_index, 6] = parsed_obs[7] # v
+			obstacles_label[int(parsed_obs[1]), int(parsed_obs[0]), best_iou_index, 6] = parsed_obs[7] / 68.759 # v
 		# Yolo out + depth put
 		labels = {}
 		labels["depth"] = np.expand_dims(depth_label, 2)
