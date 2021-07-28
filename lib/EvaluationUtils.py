@@ -7,7 +7,7 @@ import os
 from ObstacleDetectionObjectives import numpy_iou
 
 class Obstacle(object):
-	def __init__(self, x, y, w, h, depth_seg = None, obs_stats = None):
+	def __init__(self, x, y, w, h, depth_seg=None, obs_stats=None, conf_score=None):
 		self.x = x #top left
 		self.y = y #top left
 		self.w = int(w)
@@ -20,6 +20,8 @@ class Obstacle(object):
 			self.segmentation = None
 			self.depth_mean = obs_stats[0]
 			self.depth_variance = obs_stats[1]
+		if conf_score is not None:
+			self.confidence = conf_score
 
 	def compute_depth_stats(self, depth):
 		if len(depth.shape) == 4:
@@ -57,10 +59,12 @@ class Obstacle(object):
 			mean_depth = -1
 			var_depth = -1
 		return mean_depth, var_depth
+
 	def evaluate_estimation(self, estimated_depth):
 		mean_rmse = (self.depth_mean - self.depth_mean)**2
 		mean_variance = (self.depth_variance - self.depth_variance)**2
 		return math.sqrt(mean_rmse), math.sqrt(mean_variance), self.valid_points
+
 
 def depth_to_meters_airsim(depth):
 	depth = depth.astype(np.float64)
@@ -69,17 +73,20 @@ def depth_to_meters_airsim(depth):
 			depth[i,j] = (-4.586e-09 * (depth[i,j] ** 4.)) + (3.382e-06 * (depth[i,j] ** 3.)) - (0.000105 * (depth[i,j] ** 2.)) + (0.04239 * depth[i,j]) + 0.04072
 	return depth
 
+
 def depth_to_meters_base(depth):
 	return depth * 39.75 / 255.
+
 
 def get_obstacles_from_list(list):
 	obstacles = []
 	for obstacle_def in list:
-		obstacle = Obstacle(obstacle_def[0][0], obstacle_def[0][1], obstacle_def[0][2], obstacle_def[0][3], obs_stats=(obstacle_def[1][0], obstacle_def[1][1]))
+		obstacle = Obstacle(obstacle_def[0][0], obstacle_def[0][1], obstacle_def[0][2], obstacle_def[0][3], obs_stats=(obstacle_def[1][0], obstacle_def[1][1]), conf_score=obstacle_def[2])
 		obstacles.append(obstacle)
 	return obstacles
 
-def get_detected_obstacles_from_detector(prediction, confidence_thr = 1.0, output_img = None):
+
+def get_detected_obstacles_from_detector(prediction, confidence_thr=0.5, output_img=None):
 	def sigmoid(x):
 		return 1 / (1 + math.exp(-x))
 
@@ -96,38 +103,41 @@ def get_detected_obstacles_from_detector(prediction, confidence_thr = 1.0, outpu
 	var_pred = prediction[0, :, :, :, 6]
 	
 	# img shape
-	IMG_WIDTH = 256
-	IMG_HEIGHT = 160
+	IMG_WIDTH = 256.
+	IMG_HEIGHT = 160.
 
 	# Anchors
 	anchors = np.array([[0.34755122, 0.84069513], 
 						[0.14585618, 0.25650666]], dtype=np.float32)
 
 	# obstacles list
-	file = open('confidence.txt', 'a')
+	#file = open('confidence.txt', 'w')
 	detected_obstacles = []
 	for i in range(0, 5):
 		for j in range(0, 8):
 			for k in range(0, 2):
 				val_conf = sigmoid(conf_pred[i, j, k])
-				file.write(str(sigmoid(conf_pred[i, j, k]))+'\n')
 				if val_conf >= confidence_thr:
 					x = sigmoid(x_pred[i, j, k])
 					y = sigmoid(y_pred[i, j, k])
 					w = np.exp(w_pred[i, j, k]) * anchors[k, 0] * IMG_WIDTH
 					h = np.exp(h_pred[i, j, k]) * anchors[k, 1] * IMG_HEIGHT
-					mean = mean_pred[i, j, k] * 39.75
-					var = var_pred[i, j, k] * 39.75 * 100
+					mean = mean_pred[i, j, k] * 20.
+					var = var_pred[i, j, k] * 68.759
+					#file.write(str(sigmoid(conf_pred[i, j, k]))+' '+str(mean)+'\n')
 					x_top_left = int(np.floor(((x + j) * 32.) - (w / 2.)))
 					y_top_left = int(np.floor(((y + i) * 32.) - (h / 2.)))
 					if output_img is not None:
 						cv2.rectangle(output_img, (x_top_left, y_top_left), (x_top_left+int(w), y_top_left+int(h)), (0,0,255), 2)
-					detected_obstacles.append([(x_top_left, y_top_left, w, h), (mean, var)])
+					detected_obstacles.append([(x_top_left, y_top_left, w, h), (mean, var), val_conf])
+				#else:
+				#	file.write(str(sigmoid(conf_pred[i, j, k]))+'\n')
 	obstacles = get_obstacles_from_list(detected_obstacles)
-	file.close()
+	#file.close()
 	return obstacles, output_img
 
-def get_obstacles_from_seg_and_depth(depth, segm, depth_thr = 20, segm_thr = 55, f_segm_thr = cv2.THRESH_BINARY, is_gt = False):
+
+def get_obstacles_from_seg_and_depth(depth, segm, depth_thr=20, segm_thr=55, f_segm_thr=cv2.THRESH_BINARY, is_gt=False):
 	"Given segmentation and depth, get a list of obstacles objects. Depth_thr: max distance of obstacles Segm_thr= threshold between obstacle/non-obstacle classes"
 	if len(depth.shape) == 4:
 		depth = depth[0,:,:,0]
@@ -155,8 +165,8 @@ def get_obstacles_from_seg_and_depth(depth, segm, depth_thr = 20, segm_thr = 55,
 		obstacle = Obstacle(x, y, w, h, depth_seg=(depth_mask * depth * (obstacles_mask), obstacles_mask))
 		if obstacle.valid_points > 35:
 			obstacles.append(obstacle)
+	return obstacles
 
-		return obstacles
 
 def rmse_error_on_vector(y_true, y_pred):
 	diff = y_true - y_pred
@@ -166,14 +176,15 @@ def rmse_error_on_vector(y_true, y_pred):
 	rmse_error = np.sqrt(mean + 0.00001)
 	return rmse_error
 
+
 def sc_inv_logrmse_error_on_vector(y_true, y_pred):
 	first_log = np.log(y_pred + 1.)
 	second_log = np.log(y_true + 1.)
-
 	log_term = np.sum(np.square((first_log - second_log))) / float(np.count_nonzero(first_log))
 	sc_inv_term = np.square(np.sum(first_log - second_log) / (float(np.count_nonzero(first_log))**2))
-	error = log_term - sc_inv_term
+	error = log_term - 0.5*sc_inv_term
 	return error
+
 
 def rmse_error_on_matrix(y_true, y_pred):
 	y_true = y_true.flatten()
@@ -181,13 +192,15 @@ def rmse_error_on_matrix(y_true, y_pred):
 	rmse_error = rmse_error_on_vector(y_true,y_pred)
 	return rmse_error
 
+
 def sc_inv_logrmse_error_on_matrix(y_true, y_pred):
 	y_true = y_true.flatten()
 	y_pred = y_pred.flatten()
 	error = sc_inv_logrmse_error_on_vector(y_true, y_pred)
 	return error
 
-def compute_obstacle_error_on_depth_branch(estimation, obstacles, output_img = None):
+
+def compute_obstacle_error_on_depth_branch(estimation, obstacles, output_img=None):
 	"Given a depth estimation and a list of obstacles, compute depth error on obstacles"
 	i = 0
 	obs_area = 0
@@ -213,7 +226,8 @@ def compute_obstacle_error_on_depth_branch(estimation, obstacles, output_img = N
 
 	return obs_m_error, obs_v_error, obs_area, output_img
 
-def compute_detection_stats(detected_obstacles, gt_obstacles, iou_thresh = 0.25):
+
+def compute_detection_stats(detected_obstacles, gt_obstacles, iou_thresh = 0.5):
 	#convert in Obstacle object the input list, created by get_detected_obstacles_from_detector
 	#print "Detected {} obstacles. The image has {} GT obstacles".format(len(detected_obstacles), len(gt_obstacles))
 	if len(gt_obstacles) > 0:
@@ -228,8 +242,8 @@ def compute_detection_stats(detected_obstacles, gt_obstacles, iou_thresh = 0.25)
 
 			#Uso IOU per questa misura. E se misurassi distanza dei centri?
 			for gt_obstacle in gt_obstacles:
-				iou, overlap = numpy_iou((gt_obstacle.x + gt_obstacle.w / 2, gt_obstacle.y + gt_obstacle.h / 2),
-										 (det_obstacle.x + det_obstacle.w / 2, det_obstacle.y + det_obstacle.h / 2),
+				iou, overlap = numpy_iou((gt_obstacle.x + gt_obstacle.w / 2., gt_obstacle.y + gt_obstacle.h / 2.),
+										 (det_obstacle.x + det_obstacle.w / 2., det_obstacle.y + det_obstacle.h / 2.),
 										 (gt_obstacle.w, gt_obstacle.h),
 										 (det_obstacle.w, det_obstacle.h))
 				if iou > max_iou:
@@ -240,7 +254,7 @@ def compute_detection_stats(detected_obstacles, gt_obstacles, iou_thresh = 0.25)
 				idx += 1
 			closer_gt_obstacles.append((gt_obstacles[max_idx], max_idx, max_iou, is_overlap))
 		
-		# Resultado
+		# Result: best iou, depth error, variance error, multiple detections
 		iou_for_each_gt_obstacle = np.zeros(shape=len(gt_obstacles), dtype=np.float32)
 		depth_error_for_each_gt_obstacle = np.zeros(shape=len(gt_obstacles), dtype=np.float32)
 		var_depth_error_for_each_gt_obstacle = np.zeros(shape=len(gt_obstacles), dtype=np.float32)
@@ -258,14 +272,14 @@ def compute_detection_stats(detected_obstacles, gt_obstacles, iou_thresh = 0.25)
 				it += 1
 		
 		n_detected_obstacles = 0
-		n_non_detected_obs = 0
+		n_non_detected_obs = 0 # false negatives
 		
 		for n in n_valid_pred_for_each_gt_obstacle:
 			if n > 0:
 				n_detected_obstacles += 1
 			else:
 				n_non_detected_obs += 1
-
+		#Compute average iou, mean error, variance error
 		avg_iou = 0
 		avg_mean_depth_error = -1
 		avg_var_depth_error = -1
@@ -275,12 +289,13 @@ def compute_detection_stats(detected_obstacles, gt_obstacles, iou_thresh = 0.25)
 			avg_mean_depth_error = np.mean(depth_error_for_each_gt_obstacle[np.nonzero(depth_error_for_each_gt_obstacle)])
 			avg_var_depth_error = np.mean(var_depth_error_for_each_gt_obstacle[np.nonzero(var_depth_error_for_each_gt_obstacle)])
 		
+		#Compute Precision and Recall
 		true_positives = np.sum(n_valid_pred_for_each_gt_obstacle)
 		false_positives = len(detected_obstacles) - true_positives
 		multiple_detections = true_positives - n_detected_obstacles
+		#Precision and Recall
 		precision = true_positives / (true_positives + false_positives)
 		recall = true_positives / (true_positives + n_non_detected_obs)
-	
 	elif len(detected_obstacles) > 0:
 		#detection on image with no gt obstacle
 		avg_iou = 0
@@ -303,6 +318,7 @@ def compute_detection_stats(detected_obstacles, gt_obstacles, iou_thresh = 0.25)
 		n_non_detected_obs = -1
 
 	return avg_iou, precision, recall, avg_mean_depth_error, avg_var_depth_error, true_positives, false_positives, n_non_detected_obs
+
 
 def show_detections(rgb, detection, gt=None, save = True, save_dir = 'result', file_name=None, print_depths=False, sleep_for = 50):
 	if len(rgb.shape) == 4:
@@ -353,6 +369,7 @@ def show_detections(rgb, detection, gt=None, save = True, save_dir = 'result', f
 	cv2.imshow("Detections(RED:predictions,GREEN: GT", output)
 	cv2.waitKey(sleep_for)
 
+
 def show_depth(rgb, depth, gt=None, save = True, save_dir = 'result', file_name=None, max = 45.0, sleep_for=50):
 	if len(rgb.shape) == 4:
 		rgb = rgb[0, :, :, :]
@@ -398,3 +415,30 @@ def load_model(name, config):
 	detector_only = False
 
 	return model, detector_only
+
+def non_maximal_suppresion(obstacles_list, iou_thresh=0.7):
+	#Flag: is one if is a valid detection
+	valid_detection = np.ones(shape=len(obstacles_list), dtype=np.uint8)
+	n = len(obstacles_list)#total obstacles
+	for i in range(n-1):
+		obstacle_1 = obstacles_list[i]
+		for j in range(i+1, n):
+			#Compute IOU(obstacle_1, obstacle_2)
+			obstacle_2 = obstacles_list[j]
+			iou, overlap = numpy_iou((obstacle_1.x + obstacle_1.w/2., obstacle_1.y + obstacle_1.h/2.),
+								 	 (obstacle_2.x + obstacle_2.w/2., obstacle_2.y + obstacle_2.h/2.),
+								 	 (obstacle_1.w, obstacle_1.h),
+								 	 (obstacle_2.w, obstacle_2.h))
+			if iou > iou_thresh or overlap:
+				#Select the best detection
+				if obstacle_1.confidence > obstacle_2.confidence:
+					valid_detection[j] = 0
+				else:
+					valid_detection[i] = 0
+	#As a result: list with no multiple detections
+	best_detections_list = []
+	for i in range(n):
+		flag = valid_detection[i]
+		if flag == 1:
+			best_detections_list.append(obstacles_list[i])
+	return best_detections_list

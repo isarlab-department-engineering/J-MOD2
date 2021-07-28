@@ -48,7 +48,8 @@ class DepthStats(Stats):
 			"INCONSISTENCY: DEPTHSTATS GT shape:{} PRED shape: {}".format(gt.shape, prediction.shape)
 
 	def print_stats_spec(self):
-		print("{} Depth RMSE/Sc.Inv: {},{}").format(self.string_id, self.rmse_depth_acc / float(self.iterations),self.sc_inv_depth_acc / float(self.iterations))
+		print("{} Depth RMSE/Sc.Inv: {},{}").format(self.string_id, self.rmse_depth_acc / float(self.iterations),
+																	self.sc_inv_depth_acc / float(self.iterations))
 	
 	def return_results(self):
 		errors = {}
@@ -58,8 +59,9 @@ class DepthStats(Stats):
 		errors['Scale_Inv_MSE'] = self.sc_inv_depth_acc / float(self.iterations + np.finfo(float).eps)
 		return errors
 
+
 class DetectionStats(Stats):
-	def __init__(self, string_id, iou_thresh = 0.25):
+	def __init__(self, string_id, iou_thresh = 0.5):
 		self.iou_acc = 0
 		self.true_pos_acc = 0
 		self.false_pos_acc = 0.00000001
@@ -72,7 +74,7 @@ class DetectionStats(Stats):
 		super(DetectionStats, self).__init__(string_id)
 
 	def measure_performance(self, pred_obstacles, gt):
-		iou, precision, recall, depth_m, depth_v, t, f, n = compute_detection_stats(pred_obstacles, gt, iou_thresh=0.25)
+		iou, precision, recall, depth_m, depth_v, t, f, n = compute_detection_stats(pred_obstacles, gt, iou_thresh=0.5)
 
 		if iou > -1:
 			self.imgs_with_obs += 1
@@ -89,19 +91,19 @@ class DetectionStats(Stats):
 		print("{} Detector IOU/Precision/Recall: {}, {}, {}").format(self.string_id, self.iou_acc/self.imgs_with_obs,
 																	 self.true_pos_acc / (self.true_pos_acc + self.false_pos_acc),
 																	 self.true_pos_acc / (self.true_pos_acc + self.false_neg_acc))
-		print("{} Detector Depth (Mean/Variance): {}, {}").format(self.string_id, self.depth_m / self.valid_detections,
-																  self.depth_v/ self.valid_detections)
+		print("{} Detector Mean/Variance: {}, {}").format(self.string_id, self.depth_m / self.valid_detections,
+														  self.depth_v / self.valid_detections)
 
 	def return_results(self):
 		errors = {}
 		errors['name_experiment'] = self.string_id
 		errors['n_evaluations'] = self.iterations
 		errors['valid_detections'] = self.valid_detections
-		errors['IOU'] = self.iou_acc/self.imgs_with_obs
+		errors['IOU'] = self.iou_acc / self.imgs_with_obs
 		errors['Precision'] = self.true_pos_acc / (self.true_pos_acc + self.false_pos_acc)
 		errors['Recall'] = self.true_pos_acc / (self.true_pos_acc + self.false_neg_acc)
 		errors['Detector_Depth_Mean_Error'] = self.depth_m / self.valid_detections
-		errors['Detector_Depth_Var_Error'] = self.depth_v/ self.valid_detections
+		errors['Detector_Depth_Var_Error'] = self.depth_v / self.valid_detections
 		return errors
 
 
@@ -121,7 +123,7 @@ class DepthOnObstacles(Stats):
 
 	def print_stats_spec(self):
 		print("{} Depth Error On Obst:{} (var: {})").format(self.string_id, self.depth_error_on_obs_acc / float(self.obs_area_acc),
-																		self.depth_var_error_on_obs_acc  / float(self.obs_area_acc))
+															self.depth_var_error_on_obs_acc  / float(self.obs_area_acc))
 
 	def return_results(self):
 		errors = {}
@@ -131,8 +133,9 @@ class DepthOnObstacles(Stats):
 		errors['Depth Var Error on Obs'] = self.depth_var_error_on_obs_acc  / float(self.obs_area_acc)
 		return errors
 
+
 class JMOD2Stats(Stats):
-	def __init__(self, string_id, compute_depth_branch_stats_on_obs, iou_thresh=0.25):
+	def __init__(self, string_id, compute_depth_branch_stats_on_obs, iou_thresh=0.5):
 		self.depth_stats = DepthStats(string_id + " Depth")
 		self.corrected_depth_stats = DepthStats(string_id + "Corrected Depth Branch")
 		self.depth_stats_on_obstacles = DepthOnObstacles(string_id +" Non-corrected Depth Error on Obstacles")
