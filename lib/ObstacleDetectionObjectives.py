@@ -3,26 +3,13 @@ import keras.backend as K
 import numpy as np
 from DepthMetrics import rmse_metric
 
-bnum = 1
-side = 1
-
-def overlap(x1, w1, x2, w2):
-    l1 = (x1) - w1 / 2
-    l2 = (x2) - w2 / 2
-    left = tf.where(K.greater(l1, l2), l1, l2)
-    r1 = (x1) + w1 / 2
-    r2 = (x2) + w2 / 2
-    right = tf.where(K.greater(r1, r2), r2, r1)
-    result = right - left
-    return result
-
 def numpy_overlap(x1, w1, x2, w2):
     l1 = (x1) - w1 / 2
     l2 = (x2) - w2 / 2
-    left = np.where(l1>l2,l1,l2)
+    left = np.where(l1>l2, l1, l2)
     r1 = (x1) + w1 / 2
     r2 = (x2) + w2 / 2
-    right = np.where(r1>r2,r2,r1)
+    right = np.where(r1>r2, r2, r1)
     result = (right - left)
     return result
 
@@ -45,218 +32,428 @@ def numpy_iou(top_left_gt, top_left_p, dims_gt, dims_p):
         return 0
     return pred_iou, is_overlap
 
+def iou(y_true, y_pred):
+	# Adjust prediction
+	# Anchors
+	anchors = np.array([[0.34755122, 0.84069513], 
+						[0.14585618, 0.25650666]], dtype=np.float32)
 
-def recall(y_true, y_pred):
-    truth_conf_tensor = K.expand_dims(y_true[:, :, 0], 2)  # tf.slice(y_true, [0, 0, 0], [-1,-1, 0])
-    truth_xy_tensor = y_true[:, :, 1:3]  # tf.slice(y_true, [0, 0, 1], [-1,-1, 2])
-    truth_wh_tensor = y_true[:, :, 3:5]  # tf.slice(y_true, [0, 0, 3], [-1, -1, 4])
+	# adjust x, y
+	pred_xy_tensor = K.sigmoid(y_pred[:, :, :, :, 1:3]) # relative to position to the containing cell
 
-    pred_conf_tensor = K.expand_dims(y_pred[:, :, 0], 2)  # tf.slice(y_pred, [0, 0, 0], [-1, -1, 0])
-    # pred_conf_tensor = K.tanh(pred_conf_tensor)
-    pred_xy_tensor = y_pred[:, :, 1:3]  # tf.slice(y_pred, [0, 0, 1], [-1, -1, 2])
-    pred_wh_tensor = y_pred[:, :, 3:5]  # tf.slice(y_pred, [0, 0, 3], [-1, -1, 4])
+	# adjust w, h
+	pred_wh_tensor = K.exp(y_pred[:, :, :, :, 3:5]) * K.reshape(anchors, [1, 1, 1, 2, 2]) # relative to image shape
 
-    tens = K.greater(truth_conf_tensor, 0.5)
+	# adjust confidence
+	pred_conf_tensor = K.sigmoid(y_pred[:, :, :, :, 0])
 
-    ave_iou, recall, precision, obj_count, intersection, union, ow, oh, x, y, w, h = iou(truth_xy_tensor[:, :, 0],
-                                                                                         truth_xy_tensor[:, :, 1],
-                                                                                         truth_wh_tensor[:, :, 0],
-                                                                                         truth_wh_tensor[:, :, 1],
-                                                                                         pred_xy_tensor[:, :, 0],
-                                                                                         pred_xy_tensor[:, :, 1],
-                                                                                         pred_wh_tensor[:, :, 0],
-                                                                                         pred_wh_tensor[:, :, 1],
-                                                                                         tens, pred_conf_tensor)
-    return recall
+	# Adjust true tensor
+	# adjust x, y
+	true_xy_tensor = y_true[:, :, :, :, 1:3] # relative position to the containing cell
 
-def precision(y_true, y_pred):
-    truth_conf_tensor = K.expand_dims(y_true[:, :, 0], 2)  # tf.slice(y_true, [0, 0, 0], [-1,-1, 0])
-    truth_xy_tensor = y_true[:, :, 1:3]  # tf.slice(y_true, [0, 0, 1], [-1,-1, 2])
-    truth_wh_tensor = y_true[:, :, 3:5]  # tf.slice(y_true, [0, 0, 3], [-1, -1, 4])
+	# adjust w, h
+	true_wh_tensor = y_true[:, :, :, :, 3:5] # relative to image shape
 
-    pred_conf_tensor = K.expand_dims(y_pred[:, :, 0], 2)  # tf.slice(y_pred, [0, 0, 0], [-1, -1, 0])
-    # pred_conf_tensor = K.tanh(pred_conf_tensor)
-    pred_xy_tensor = y_pred[:, :, 1:3]  # tf.slice(y_pred, [0, 0, 1], [-1, -1, 2])
-    pred_wh_tensor = y_pred[:, :, 3:5]  # tf.slice(y_pred, [0, 0, 3], [-1, -1, 4])
+	# grid dimentions: x, y
+	grid = [8., 5.]
+	rows = []
+	cols = []
+	for y in range(5):
+		for x in range(8):
+			cell = [x, y]
+			offset = [cell, cell]
+			cols.append(offset)
+		rows.append(cols)
+		cols = []
+	offset = K.reshape(tf.convert_to_tensor(rows, dtype=np.float32), [1, 5, 8, 2, 2])
+	
+	# adjust true min and max
+	true_wh_cell = true_wh_tensor * K.reshape([grid, grid], [1, 1, 1, 2, 2])
+	true_wh_half = 0.5 * true_wh_cell
+	true_xy_center = tf.math.add(true_xy_tensor, offset)
+	true_mins = true_xy_center - true_wh_half
+	true_maxes = true_xy_center + true_wh_half
 
-    tens = K.greater(truth_conf_tensor, 0.5)
+	# adjust pred min and max
+	pred_wh_cell = pred_wh_tensor * K.reshape([grid, grid], [1, 1, 1, 2, 2])
+	pred_wh_half = 0.5 * pred_wh_cell
+	pred_xy_center = tf.math.add(pred_xy_tensor, offset)
+	pred_mins = pred_xy_center - pred_wh_half
+	pred_maxes = pred_xy_center + pred_wh_half
 
-    ave_iou, recall, precision, obj_count, intersection, union, ow, oh, x, y, w, h = iou(truth_xy_tensor[:, :, 0],
-                                                                                         truth_xy_tensor[:, :, 1],
-                                                                                         truth_wh_tensor[:, :, 0],
-                                                                                         truth_wh_tensor[:, :, 1],
-                                                                                         pred_xy_tensor[:, :, 0],
-                                                                                         pred_xy_tensor[:, :, 1],
-                                                                                         pred_wh_tensor[:, :, 0],
-                                                                                         pred_wh_tensor[:, :, 1],
-                                                                                         tens, pred_conf_tensor)
-    return precision
+	# adjust intersection
+	intersect_min = tf.maximum(pred_mins, true_mins)
+	intersect_max = tf.minimum(pred_maxes, true_maxes)
+	intersect_wh = tf.maximum(intersect_max - intersect_min, 0.0)
+	intersect_areas = intersect_wh[:, :, :, :, 0] * intersect_wh[:, :, :, :, 1]
 
+	# adjust areas
+	true_areas = true_wh_cell[:, :, :, :, 0] * true_wh_cell[:, :, :, :, 1]
+	pred_areas = pred_wh_cell[:, :, :, :, 0] * pred_wh_cell[:, :, :, :, 1]
+	union_areas = true_areas + pred_areas - intersect_areas
+	iou_scores  = tf.truediv(intersect_areas, union_areas) # shape(None, 5, 8, 5)
+
+
+	# mask 
+	conf_mask = K.expand_dims(y_true[:, :, :, :, 0], axis=-1)
+	# iou mean
+	ave_iou = tf.reduce_sum(K.expand_dims(iou_scores, axis=-1) * conf_mask) / tf.reduce_sum(conf_mask)
+
+	# Counters: true positives, false positives
+
+	# counter: true positives + false negatives
+	true_p_false_n = tf.reduce_sum(conf_mask)
+
+	# counter: true positives + false positives
+	band_conf = K.greater(K.sigmoid(y_pred[:, :, :, :, 0]), 0.5)
+	true_p_false_p = tf.reduce_sum(tf.where(band_conf, K.ones_like(y_pred[..., 0]), K.zeros_like(y_pred[..., 0])))
+
+	# counter: true positives
+	band_iou = K.greater(iou_scores, 0.5)
+	band_tp = tf.logical_and(band_conf, band_iou)
+	true_p = K.sum(tf.where(band_tp, K.ones_like(y_pred[..., 0]), K.zeros_like(y_pred[..., 0])))
+	
+	# Recall: true positive / (true positives + false negatives)
+	recall = true_p / (true_p_false_n + 0.00000001)
+	
+	# Precision: true_positives / (true_positive + false_positives)
+	precision = true_p / (true_p_false_p + 0.0000001)
+	
+	return ave_iou, recall, precision
 
 def iou_metric(y_true, y_pred):
-    truth_conf_tensor = K.expand_dims(y_true[:, :, 0], 2)  # tf.slice(y_true, [0, 0, 0], [-1,-1, 0])
-    truth_xy_tensor = y_true[:, :, 1:3]  # tf.slice(y_true, [0, 0, 1], [-1,-1, 2])
-    truth_wh_tensor = y_true[:, :, 3:5]  # tf.slice(y_true, [0, 0, 3], [-1, -1, 4])
+	# call iou
+	ave_iou, recall, precision = iou(y_true, y_pred)
+	return ave_iou
 
-    pred_conf_tensor = K.expand_dims(y_pred[:, :, 0], 2)  # tf.slice(y_pred, [0, 0, 0], [-1, -1, 0])
-    # pred_conf_tensor = K.tanh(pred_conf_tensor)
-    pred_xy_tensor = y_pred[:, :, 1:3]  # tf.slice(y_pred, [0, 0, 1], [-1, -1, 2])
-    pred_wh_tensor = y_pred[:, :, 3:5]  # tf.slice(y_pred, [0, 0, 3], [-1, -1, 4])
+def recall(y_true, y_pred):
+	# call iou
+	ave_iou, recall, precision = iou(y_true, y_pred)
+	return recall
 
-    tens = K.greater(truth_conf_tensor, 0.5)
-
-    ave_iou, recall, precision, obj_count, intersection, union, ow, oh, x, y, w, h = iou(truth_xy_tensor[:, :, 0],
-                                                                                         truth_xy_tensor[:, :, 1],
-                                                                                         truth_wh_tensor[:, :, 0],
-                                                                                         truth_wh_tensor[:, :, 1],
-                                                                                         pred_xy_tensor[:, :, 0],
-                                                                                         pred_xy_tensor[:, :, 1],
-                                                                                         pred_wh_tensor[:, :, 0],
-                                                                                         pred_wh_tensor[:, :, 1],
-                                                                                         tens, pred_conf_tensor)
-    return ave_iou
+def precision(y_true, y_pred):
+	# call iou
+	ave_iou, recall, precision = iou(y_true, y_pred)
+	return precision
 
 def mean_metric(y_true, y_pred):
-    truth_m_tensor = K.expand_dims(y_true[:, :, 5], 2)
-    pred_m_tensor = K.expand_dims(y_pred[:, :, 5], 2)
-
-    return rmse_metric(truth_m_tensor,pred_m_tensor)
+	conf_mask = K.expand_dims(y_true[:, :, :, :, 0], axis=-1)
+	truth_m_tensor = K.expand_dims(y_true[:, :, :, :, 5], axis=-1)
+	pred_m_tensor = K.expand_dims(y_pred[:, :, :, :, 5], axis=-1) * conf_mask
+	return rmse_metric(truth_m_tensor, pred_m_tensor)
 
 def variance_metric(y_true, y_pred):
-    truth_v_tensor = K.expand_dims(y_true[:, :, 6], 2)
-    pred_v_tensor = K.expand_dims(y_pred[:, :, 6], 2)
+	conf_mask = K.expand_dims(y_true[:, :, :, :, 0], axis=-1)
+	truth_v_tensor = K.expand_dims(y_true[:, :, :, :, 6], axis=-1)
+	pred_v_tensor = K.expand_dims(y_pred[:, :, :, :, 6], axis=-1) * conf_mask
+	return rmse_metric(truth_v_tensor, pred_v_tensor)
 
-    return rmse_metric(truth_v_tensor, pred_v_tensor)
+def yolo_v2_loss(y_true, y_pred):
+	# Adjust prediction
+	# Anchors
+	anchors = np.array([[0.34755122, 0.84069513], 
+						[0.14585618, 0.25650666]], dtype=np.float32)
+	# adjust x, y
+	pred_xy_tensor = K.sigmoid(y_pred[:, :, :, :, 1:3]) # relative to position to the containing cell
 
+	# adjust w, h
+	pred_wh_tensor = K.exp(y_pred[:, :, :, :, 3:5]) * K.reshape(anchors, [1, 1, 1, 2, 2]) # relative to image shape
 
-def iou(x_true, y_true, w_true, h_true, x_pred, y_pred, w_pred, h_pred, t, pred_confid_tf):
-    x_true = K.expand_dims(x_true, 2)
-    y_true = K.expand_dims(y_true, 2)
-    w_true = K.expand_dims(w_true, 2)
-    h_true = K.expand_dims(h_true, 2)
-    x_pred = K.expand_dims(x_pred, 2)
-    y_pred = K.expand_dims(y_pred, 2)
-    w_pred = K.expand_dims(w_pred, 2)
-    h_pred = K.expand_dims(h_pred, 2)
+	# adjust confidence
+	pred_conf_tensor = K.sigmoid(y_pred[:, :, :, :, 0])
 
-    xoffset = K.expand_dims(tf.convert_to_tensor(np.asarray([0,1,2,3,4,5,6,7,0,1,2,3,4,5,6,7,0,1,2,3,4,5,6,7,0,1,2,3,4,5,6,7,0,1,2,3,4,5,6,7], dtype=np.float32)),1)
-    yoffset = K.expand_dims(tf.convert_to_tensor(np.asarray([0,0,0,0,0,0,0,0,1,1,1,1,1,1,1,1,2,2,2,2,2,2,2,2,3,3,3,3,3,3,3,3,4,4,4,4,4,4,4,4], dtype=np.float32)),1)
+	# adjust mean
+	pred_m_tensor = K.expand_dims(y_pred[:, :, :, :, 5], axis=-1)
 
+	# adjust variance
+	pred_v_tensor = K.expand_dims(y_pred[:, :, :, :, 6], axis=-1)
 
-    # xoffset = K.cast_to_floatx((np.tile(np.arange(side),side)))
-    # yoffset = K.cast_to_floatx((np.repeat(np.arange(side),side)))
-    x = tf.where(t, x_pred, K.zeros_like(x_pred))
-    y = tf.where(t, y_pred, K.zeros_like(y_pred))
-    w = tf.where(t, w_pred, K.zeros_like(w_pred))
-    h = tf.where(t, h_pred, K.zeros_like(h_pred))
+	# Adjust true tensor
+	# adjust x, y
+	true_xy_tensor = y_true[:, :, :, :, 1:3] # relative position to the containing cell
 
-    ow = overlap(x + xoffset, w * 256. , x_true + xoffset, w_true * 256.)
-    oh = overlap(y + yoffset, h * 160., y_true + yoffset, h_true * 256.)
+	# adjust w, h
+	true_wh_tensor = y_true[:, :, :, :, 3:5] # relative to image shape
 
-    ow = tf.where(K.greater(ow, 0), ow, K.zeros_like(ow))
-    oh = tf.where(K.greater(oh, 0), oh, K.zeros_like(oh))
-    intersection = ow * oh
-    union = w * 256. * h * 160. + w_true * 256. * h_true * 160.  - intersection + K.epsilon()  # prevent div 0
+	# adjust mean
+	true_m_tensor = K.expand_dims(y_true[:, :, :, :, 5], axis=-1)
 
-    #
-    # find best iou among bboxs
-    # iouall shape=(-1, bnum*gridcells)
-    iouall = intersection / union
-    obj_count = K.sum(tf.where(t, K.ones_like(x_true), K.zeros_like(x_true)))
+	# adjust variance
+	true_v_tensor = K.expand_dims(y_true[:, :, :, :, 6], axis=-1)
 
-    ave_iou = K.sum(iouall) / (obj_count + 0.0000001)
-    recall_t = K.greater(iouall, 0.5)
-    # recall_count = K.sum(tf.select(recall_t, K.ones_like(iouall), K.zeros_like(iouall)))
+	# Compute confidence
+	# grid dimentions: x, y
+	grid = [256., 160.]
+	rows = []
+	cols = []
+	for y in range(5):
+		for x in range(8):
+			cell = [x, y]
+			offset = [cell, cell]
+			cols.append(offset)
+		rows.append(cols)
+		cols = []
+	offset = K.reshape(tf.convert_to_tensor(rows, dtype=np.float32), [1, 5, 8, 2, 2])
+	
+	# adjust true min and max
+	true_wh_cell = true_wh_tensor * K.reshape([grid, grid], [1, 1, 1, 2, 2])
+	true_wh_half = 0.5 * true_wh_cell
+	true_xy_center = tf.math.add(true_xy_tensor, offset) * 32.
+	true_mins = true_xy_center - true_wh_half
+	true_maxes = true_xy_center + true_wh_half
 
-    fid_t = K.greater(pred_confid_tf, 0.3)
-    recall_count_all = K.sum(tf.where(fid_t, K.ones_like(iouall), K.zeros_like(iouall)))
+	# adjust pred min and max
+	pred_wh_cell = pred_wh_tensor * K.reshape([grid, grid], [1, 1, 1, 2, 2])
+	pred_wh_half = 0.5 * pred_wh_cell
+	pred_xy_center = tf.math.add(pred_xy_tensor, offset) * 32.
+	pred_mins = pred_xy_center - pred_wh_half
+	pred_maxes = pred_xy_center + pred_wh_half
 
-    #  
-    obj_fid_t = tf.logical_and(fid_t, t)
-    obj_fid_t = tf.logical_and(fid_t, recall_t)
-    effevtive_iou_count = K.sum(tf.where(obj_fid_t, K.ones_like(iouall), K.zeros_like(iouall)))
+	# adjust intersection
+	intersect_min = tf.maximum(pred_mins, true_mins)
+	intersect_max = tf.minimum(pred_maxes, true_maxes)
+	intersect_wh = tf.maximum(intersect_max - intersect_min, 0.0)
+	intersect_areas = intersect_wh[:, :, :, :, 0] * intersect_wh[:, :, :, :, 1]
 
-    recall = effevtive_iou_count / (obj_count + 0.00000001)
-    precision = effevtive_iou_count / (recall_count_all + 0.0000001)
-    return ave_iou, recall, precision, obj_count, intersection, union, ow, oh, x, y, w, h
+	# adjust areas
+	true_areas = true_wh_cell[:, :, :, :, 0] * true_wh_cell[:, :, :, :, 1]
+	pred_areas = pred_wh_cell[:, :, :, :, 0] * pred_wh_cell[:, :, :, :, 1]
+	union_areas = true_areas + pred_areas - intersect_areas
+	iou_scores  = tf.truediv(intersect_areas, union_areas) # shape(None, 5, 8, 2)
 
+	# when there is no object in cell iou should be zero
+	iou_scores_corrected = y_true[:, :, :, :, 0] * iou_scores
 
-# return obj_count, ave_iou, bestiou
+	# confidence error: pred_conf - iou
+	conf_error = pred_conf_tensor - iou_scores_corrected
 
+	# compute error
+	conf_mask = K.expand_dims(y_true[:, :, :, :, 0], axis=-1)
+	coord_mask = K.concatenate([conf_mask, conf_mask], axis=-1)
 
+	# location error
+	batch_size = 64.0
+	loss_xy = tf.reduce_sum(tf.square(true_xy_tensor - pred_xy_tensor) * coord_mask) / batch_size
 
+	# size error
+	loss_wh = tf.reduce_sum(tf.square(tf.sqrt(true_wh_tensor) - tf.sqrt(pred_wh_tensor)) * coord_mask) / batch_size
 
-def yolo_conf_loss(y_true, y_pred, t):
-    real_y_true = tf.where(t, y_true, K.zeros_like(y_true))
-    pobj = K.sigmoid(y_pred)
-    lo = K.square(real_y_true - pobj)
-    value_if_true = 5.0 * (lo)
-    value_if_false = 0.05 * (lo)
-    loss1 = tf.where(t, value_if_true, value_if_false)
+	# depth error
+	loss_mean = tf.reduce_sum(tf.square(true_m_tensor - pred_m_tensor) * conf_mask) / batch_size
 
-    loss = K.mean(loss1)
-    return loss
+	# variance depth error
+	loss_var = tf.reduce_sum(tf.square(true_v_tensor - pred_v_tensor) * conf_mask) / batch_size
 
-def yoloxyloss(y_true, y_pred, t):
-    #real_y_true = tf.where(t, y_true, K.zeros_like(y_true))
-    lo = K.square(y_true - y_pred) + 0.05 * K.square(0.5 -y_pred)
-    value_if_true = lo
-    value_if_false = K.zeros_like(y_true)
-    loss1 = tf.where(t, value_if_true, value_if_false)
-    objsum = K.sum(y_true)
-    return K.sum(loss1)/(objsum+0.0000001)
+	# confidence object error
+	loss_object = tf.reduce_sum(K.expand_dims(tf.square(conf_error), axis=-1) * conf_mask) / batch_size
 
-def yolo_wh_loss(y_true,y_pred,t):
-    #real_y_true = tf.where(t, y_true, K.zeros_like(y_true))
-    lo = K.square(y_true - y_pred) + 0.05* K.square(0.5 - y_pred)
-    #lo = K.square(y_true - y_pred) + 0.3 * K.square(0.5 - y_pred)
-    value_if_true = lo
-    value_if_false = K.zeros_like(y_true)
-    loss1 = tf.where(t, value_if_true, value_if_false)
-    objsum = K.sum(y_true)
-    return K.sum(loss1) / (objsum + 0.0000001)
+	# confidence non object error
+	loss_non_object = tf.reduce_sum(K.expand_dims(tf.square(conf_error), axis=-1) * (1. - conf_mask)) / batch_size
 
-def yolo_regressor_loss(y_true,y_pred,t):
-    #real_y_true = tf.where(t, y_true, K.zeros_like(y_true))
-    lo = K.square(y_true - y_pred) #+ 0.15 * K.square(0.5 - y_pred)
-    # lo = K.square(y_true - y_pred) + 0.3 * K.square(0.5 - y_pred)
-    value_if_true = lo
-    value_if_false = K.zeros_like(y_true)
-    loss1 = tf.where(t, value_if_true, value_if_false)
+	# total loss
+	loss = 1.0 * loss_object + 0.005 * loss_non_object + 3.5 * loss_xy + 3.5 * loss_wh + 1.0 * loss_mean + 1.0 * loss_var
+	
+	return loss
 
-    objsum = K.sum(y_true)
-    return K.sum(loss1) / (objsum + 0.0000001)
+def yolo_objconf_loss(y_true, y_pred):
+	# Adjust prediction
+	# Anchors
+	anchors = np.array([[0.34755122, 0.84069513], 
+						[0.14585618, 0.25650666]], dtype=np.float32)
+	# adjust x, y
+	pred_xy_tensor = K.sigmoid(y_pred[:, :, :, :, 1:3]) # relative to position to the containing cell
 
-def yolo_v1_loss(y_true, y_pred):
-    # Y_PRED is Batchx40x7 tensor. y_true is a 40x7 tensor
+	# adjust w, h
+	pred_wh_tensor = K.exp(y_pred[:, :, :, :, 3:5]) * K.reshape(anchors, [1, 1, 1, 2, 2]) # relative to image shape
 
-    truth_conf_tensor = K.expand_dims(y_true[:,:,0],2)#tf.slice(y_true, [0, 0, 0], [-1,-1, 0])
-    truth_xy_tensor = y_true[:,:,1:3]#tf.slice(y_true, [0, 0, 1], [-1,-1, 2])
-    truth_wh_tensor = y_true[:,:,3:5]#tf.slice(y_true, [0, 0, 3], [-1, -1, 4])
-    truth_m_tensor = K.expand_dims(y_true[:,:,5],2)#tf.slice(y_true, [0, 0, 5], [-1, -1, 5])
-    truth_v_tensor = K.expand_dims(y_true[:,:,6],2)#tf.slice(y_true, [0, 0, 6], [-1, -1, 6])
+	# adjust confidence
+	pred_conf_tensor = K.sigmoid(y_pred[:, :, :, :, 0])
 
-    pred_conf_tensor = K.expand_dims(y_pred[:,:,0],2)#tf.slice(y_pred, [0, 0, 0], [-1, -1, 0])
-    #pred_conf_tensor = K.tanh(pred_conf_tensor)
-    pred_xy_tensor = y_pred[:,:,1:3]#tf.slice(y_pred, [0, 0, 1], [-1, -1, 2])
-    pred_wh_tensor = y_pred[:,:,3:5]#tf.slice(y_pred, [0, 0, 3], [-1, -1, 4])
-    pred_m_tensor = K.expand_dims(y_pred[:,:,5],2)#tf.slice(y_pred, [0, 0, 5], [-1, -1, 5])
-    pred_v_tensor = K.expand_dims(y_pred[:,:,6],2)#tf.slice(y_pred, [0, 0, 6], [-1, -1, 6])
+	# Adjust true tensor
+	# adjust x, y
+	true_xy_tensor = y_true[:, :, :, :, 1:3] # relative position to the containing cell
 
-    truth_xy_tensor = tf.Print(truth_xy_tensor, [truth_xy_tensor[:, 14:20, 0]], message='truth_xy', summarize=30)
-    pred_xy_tensor = tf.Print(pred_xy_tensor, [pred_xy_tensor[:, 14:20, 0]], message='pred_xy', summarize=30)
+	# adjust w, h
+	true_wh_tensor = y_true[:, :, :, :, 3:5] # relative to image shape
 
-    tens = K.greater(K.sigmoid(truth_conf_tensor), 0.5)
-    tens_2d = K.concatenate([tens,tens], axis=-1)
+	# Compute confidence
+	# grid dimentions: x, y
+	grid = [256., 160.]
+	rows = []
+	cols = []
+	for y in range(5):
+		for x in range(8):
+			cell = [x, y]
+			offset = [cell, cell]
+			cols.append(offset)
+		rows.append(cols)
+		cols = []
+	offset = K.reshape(tf.convert_to_tensor(rows, dtype=np.float32), [1, 5, 8, 2, 2])
+	
+	# adjust true min and max
+	true_wh_cell = true_wh_tensor * K.reshape([grid, grid], [1, 1, 1, 2, 2])
+	true_wh_half = 0.5 * true_wh_cell
+	true_xy_center = tf.math.add(true_xy_tensor, offset) * 32.
+	true_mins = true_xy_center - true_wh_half
+	true_maxes = true_xy_center + true_wh_half
 
-    conf_loss = yolo_conf_loss(truth_conf_tensor, pred_conf_tensor,tens)
-    xy_loss = yoloxyloss(truth_xy_tensor,pred_xy_tensor,tens_2d)
-    wh_loss = yolo_wh_loss(truth_wh_tensor,pred_wh_tensor,tens_2d)
-    m_loss = yolo_regressor_loss(truth_m_tensor,pred_m_tensor,tens)
-    v_loss = yolo_regressor_loss(truth_v_tensor,pred_v_tensor,tens)
+	# adjust pred min and max
+	pred_wh_cell = pred_wh_tensor * K.reshape([grid, grid], [1, 1, 1, 2, 2])
+	pred_wh_half = 0.5 * pred_wh_cell
+	pred_xy_center = tf.math.add(pred_xy_tensor, offset) * 32.
+	pred_mins = pred_xy_center - pred_wh_half
+	pred_maxes = pred_xy_center + pred_wh_half
 
-    loss = 2.0 * conf_loss + 0.25 * xy_loss + 0.25 * wh_loss + 1.5 * m_loss + 1.25 * v_loss # loss v1
-    #loss = 2.0 * conf_loss + 0.1 * xy_loss + 1.0 * wh_loss + 5.0 * m_loss + 2.5 * v_loss  # loss v2
+	# adjust intersection
+	intersect_min = tf.maximum(pred_mins, true_mins)
+	intersect_max = tf.minimum(pred_maxes, true_maxes)
+	intersect_wh = tf.maximum(intersect_max - intersect_min, 0.0)
+	intersect_areas = intersect_wh[:, :, :, :, 0] * intersect_wh[:, :, :, :, 1]
 
+	# adjust areas
+	true_areas = true_wh_cell[:, :, :, :, 0] * true_wh_cell[:, :, :, :, 1]
+	pred_areas = pred_wh_cell[:, :, :, :, 0] * pred_wh_cell[:, :, :, :, 1]
+	union_areas = true_areas + pred_areas - intersect_areas
+	iou_scores  = tf.truediv(intersect_areas, union_areas) # shape(None, 5, 8, 5)
 
-    return loss
+	# when there is no object in cell iou should be zero
+	iou_scores_corrected = y_true[:, :, :, :, 0] * iou_scores
+
+	# confidence error: pred_conf - iou
+	conf_error = pred_conf_tensor - iou_scores_corrected
+
+	# compute error
+	conf_mask = K.expand_dims(y_true[:, :, :, :, 0], axis=-1)
+
+	# location error
+	batch_size = 64.0
+
+	# confidence object error
+	loss_object = tf.reduce_sum(K.expand_dims(tf.square(conf_error), axis=-1) * conf_mask) / batch_size
+
+	# total loss
+	loss = 1.0 * loss_object
+
+	return loss
+
+def yolo_nonobjconf_loss(y_true, y_pred):
+	# Adjust prediction
+	# Anchors
+	anchors = np.array([[0.34755122, 0.84069513], 
+						[0.14585618, 0.25650666]], dtype=np.float32)
+	# adjust x, y
+	pred_xy_tensor = K.sigmoid(y_pred[:, :, :, :, 1:3]) # relative to position to the containing cell
+
+	# adjust w, h
+	pred_wh_tensor = K.exp(y_pred[:, :, :, :, 3:5]) * K.reshape(anchors, [1, 1, 1, 2, 2]) # relative to image shape
+
+	# adjust confidence
+	pred_conf_tensor = K.sigmoid(y_pred[:, :, :, :, 0])
+
+	# Adjust true tensor
+	# adjust x, y
+	true_xy_tensor = y_true[:, :, :, :, 1:3] # relative position to the containing cell
+
+	# adjust w, h
+	true_wh_tensor = y_true[:, :, :, :, 3:5] # relative to image shape
+
+	# Compute confidence
+	# grid dimentions: x, y
+	grid = [256., 160.]
+	rows = []
+	cols = []
+	for y in range(5):
+		for x in range(8):
+			cell = [x, y]
+			offset = [cell, cell]
+			cols.append(offset)
+		rows.append(cols)
+		cols = []
+	offset = K.reshape(tf.convert_to_tensor(rows, dtype=np.float32), [1, 5, 8, 2, 2])
+	
+	# adjust true min and max
+	true_wh_cell = true_wh_tensor * K.reshape([grid, grid], [1, 1, 1, 2, 2])
+	true_wh_half = 0.5 * true_wh_cell
+	true_xy_center = tf.math.add(true_xy_tensor, offset) * 32.
+	true_mins = true_xy_center - true_wh_half
+	true_maxes = true_xy_center + true_wh_half
+
+	# adjust pred min and max
+	pred_wh_cell = pred_wh_tensor * K.reshape([grid, grid], [1, 1, 1, 2, 2])
+	pred_wh_half = 0.5 * pred_wh_cell
+	pred_xy_center = tf.math.add(pred_xy_tensor, offset) * 32.
+	pred_mins = pred_xy_center - pred_wh_half
+	pred_maxes = pred_xy_center + pred_wh_half
+
+	# adjust intersection
+	intersect_min = tf.maximum(pred_mins, true_mins)
+	intersect_max = tf.minimum(pred_maxes, true_maxes)
+	intersect_wh = tf.maximum(intersect_max - intersect_min, 0.0)
+	intersect_areas = intersect_wh[:, :, :, :, 0] * intersect_wh[:, :, :, :, 1]
+
+	# adjust areas
+	true_areas = true_wh_cell[:, :, :, :, 0] * true_wh_cell[:, :, :, :, 1]
+	pred_areas = pred_wh_cell[:, :, :, :, 0] * pred_wh_cell[:, :, :, :, 1]
+	union_areas = true_areas + pred_areas - intersect_areas
+	iou_scores  = tf.truediv(intersect_areas, union_areas) # shape(None, 5, 8, 5)
+
+	# when there is no object in cell iou should be zero
+	iou_scores_corrected = y_true[:, :, :, :, 0] * iou_scores
+
+	# confidence error: pred_conf - iou
+	conf_error = pred_conf_tensor - iou_scores_corrected
+
+	# compute error
+	conf_mask = K.expand_dims(y_true[:, :, :, :, 0], axis=-1)
+
+	# location error
+	batch_size = 64.0
+
+	# confidence non object error
+	loss_non_object = tf.reduce_sum(K.expand_dims(tf.square(conf_error), axis=-1) * (1. - conf_mask)) / batch_size
+
+	# total loss
+	loss = 0.005 * loss_non_object
+
+	return loss
+
+def yolo_xy_loss(y_true, y_pred):
+	batch_size = 64.0
+	conf_mask = K.expand_dims(y_true[:, :, :, :, 0], axis=-1)
+	coord_mask = K.concatenate([conf_mask, conf_mask], axis=-1)
+	# adjust x, y
+	true_xy_tensor = y_true[:, :, :, :, 1:3] # relative position to the containing cell
+	pred_xy_tensor = K.sigmoid(y_pred[:, :, :, :, 1:3]) # relative to position to the containing cell
+	loss_xy = tf.reduce_sum(tf.square(true_xy_tensor - pred_xy_tensor) * coord_mask) / batch_size
+	return 3.5 * loss_xy
+
+def yolo_wh_loss(y_true, y_pred):
+	batch_size = 64.0
+	# Anchors
+	anchors = np.array([[0.34755122, 0.84069513], 
+						[0.14585618, 0.25650666]], dtype=np.float32)
+	conf_mask = K.expand_dims(y_true[:, :, :, :, 0], axis=-1)
+	coord_mask = K.concatenate([conf_mask, conf_mask], axis=-1)
+	# adjust w, h
+	true_wh_tensor = y_true[:, :, :, :, 3:5] # relative to image shape
+	pred_wh_tensor = K.exp(y_pred[:, :, :, :, 3:5]) * K.reshape(anchors, [1, 1, 1, 2, 2]) # relative to image shape
+	loss_wh = tf.reduce_sum(tf.square(tf.sqrt(true_wh_tensor) - tf.sqrt(pred_wh_tensor)) * coord_mask) / batch_size
+	return 3.5 * loss_wh
+
+def yolo_mean_loss(y_true, y_pred):
+	batch_size = 64.0
+	conf_mask = K.expand_dims(y_true[:, :, :, :, 0], axis=-1)
+	# adjust mean
+	true_m_tensor = K.expand_dims(y_true[:, :, :, :, 5], axis=-1)
+	pred_m_tensor = K.expand_dims(y_pred[:, :, :, :, 5], axis=-1)
+	loss_mean = tf.reduce_sum(tf.square(true_m_tensor - pred_m_tensor) * conf_mask) / batch_size
+	return 1.0 * loss_mean
+
+def yolo_var_loss(y_true, y_pred):
+	batch_size = 64.0
+	conf_mask = K.expand_dims(y_true[:, :, :, :, 0], axis=-1)
+	# adjust mean
+	true_v_tensor = K.expand_dims(y_true[:, :, :, :, 6], axis=-1)
+	pred_v_tensor = K.expand_dims(y_pred[:, :, :, :, 6], axis=-1)
+	loss_var = tf.reduce_sum(tf.square(true_v_tensor - pred_v_tensor) * conf_mask) / batch_size
+	return 1.0 * loss_var

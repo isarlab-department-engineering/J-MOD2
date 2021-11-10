@@ -19,9 +19,6 @@ class Obstacle(object):
         roi_depth = depth[self.y:self.y+self.h, self.x:self.x+self.w]
         roi_segm = self.segmentation[self.y:self.y+self.h, self.x:self.x+self.w]
 
-        #depth = depth.astype("float32")
-        #depth_c = cv2.cvtColor(depth, cv2.COLOR_GRAY2RGB)
-
         mean_depth = 0
         squared_sum = 0
         valid_points = 0
@@ -31,20 +28,20 @@ class Obstacle(object):
                 if roi_segm[y,x] > 0:
                     mean_depth += roi_depth.item(y,x)
                     squared_sum += roi_depth.item(y,x)**2.
-                    #cv2.circle(depth_c, (self.x+x,self.y+y), 2, (0,255,0))
                     valid_points += 1
-                    #cv2.circle(depth_c, (self.x+x, self.y+y), 2, (255, 0, 0))
         if self.valid_points > 0:
             mean_depth /= self.valid_points
-            var_depth = (squared_sum - mean_depth**2) / self.valid_points
+            #var_depth = (squared_sum - mean_depth**2) / self.valid_points
+            var_depth = (squared_sum / self.valid_points) - (mean_depth**2)
         elif valid_points > 0 and self.valid_points == -1:
             mean_depth /= valid_points
-            var_depth = (squared_sum - mean_depth ** 2) / valid_points
+            #var_depth = (squared_sum - mean_depth ** 2) / valid_points
+            var_depth = (squared_sum / valid_points) - (mean_depth**2)
             self.valid_points = valid_points
         else:
             mean_depth = -1
             var_depth = -1
-
+        #print(var_depth)
         return mean_depth, var_depth
 
     def evaluate_estimation(self, estimated_depth):
@@ -68,7 +65,7 @@ def depth_to_meters_airsim(depth):
 
     return depth
 
-def find_obstacles(depth, segmentation, depth_thr, segm_thr, f_segm_thr, IMG_WIDTH = 256., IMG_HEIGHT = 160., X_SECTORS = 8., Y_SECTORS = 5., MIN_OBS_AREA = 30, test_obstacles = False):
+def find_obstacles(depth, segmentation, depth_thr, segm_thr, f_segm_thr, IMG_WIDTH = 256., IMG_HEIGHT = 160., X_SECTORS = 8., Y_SECTORS = 5., MIN_OBS_AREA = 200., test_obstacles = False):
     # convert depth in meters
     depth = depth_to_meters_airsim(depth)
     # threshold depth
@@ -113,8 +110,8 @@ def find_obstacles(depth, segmentation, depth_thr, segm_thr, f_segm_thr, IMG_WID
         w_o = w / IMG_WIDTH
         h_o = h / IMG_HEIGHT
 
-        mean = obstacle.depth_mean / 39.75
-        variance = obstacle.depth_variance * 0.01 / 39.75
+        mean = obstacle.depth_mean / 20.0
+        variance = obstacle.depth_variance
 
         if obstacle.valid_points > MIN_OBS_AREA and mean > 0:
             cv2.rectangle(segmentation, (x, y), (x + w, y + h), (0, 255, 0), 2)
@@ -124,7 +121,7 @@ def find_obstacles(depth, segmentation, depth_thr, segm_thr, f_segm_thr, IMG_WID
             time_to_show = 50
         i += 1
     if test_obstacles:
-        #cv2.imshow("test", segmentation)
+        cv2.imshow("test", segmentation*255)
         print obstacles_annotations
         cv2.waitKey(time_to_show)
         return None
@@ -133,38 +130,41 @@ def find_obstacles(depth, segmentation, depth_thr, segm_thr, f_segm_thr, IMG_WID
         #cv2.waitKey(2)
         return obstacles_annotations
 
-dataset_dir = "/home/isarlab/Datasets/UnrealDataset/"
+dataset_dir = "/home/myrna/Desktop/UnrealDataset/"
 
 seq_dirs = ['00_D','01_D','02_D','03_D','04_D','05_D','06_D','07_D','08_D','09_D','10_D','11_D','13_D','14_D','15_D','16_D','17_D','18_D','19_D','20_D']
 #seq_dirs = ['11_D','13_D','14_D','15_D','16_D','17_D','18_D','19_D','20_D']
-seq_cnt = 0
+#seq_dirs = ['21_D', '22_D', '23_D', '24_D']
+#seq_cnt = 0
 for seq in seq_dirs:
-    seq_cnt += 1
+    #seq_cnt += 1
     depth_gt_paths = sorted(glob(os.path.join(dataset_dir, seq, 'depth', '*' + '.png')))
     seg_paths = sorted(glob(os.path.join(dataset_dir, seq, 'segmentation', '*' + '.png')))
 
-    target_dir = os.path.join(dataset_dir, seq, 'obstacles_20m')
-    os.mkdir(target_dir)
+    target_dir = os.path.join(dataset_dir, seq, 'obstacles_30m')
+    #os.mkdir(target_dir)
 
     for gt_path, seg_path in zip(depth_gt_paths, seg_paths):
         gt = cv2.imread(gt_path, 0)
         seg = cv2.imread(seg_path, 0)
 
-        segm_thr = 55
+        #segm_thr = 55
+        segm_thr = 0
         depth_thr = 20
         thr_strategy = cv2.THRESH_BINARY
 
-        if seq_cnt < 13:
+        '''if seq_cnt < 13:
             segm_thr = 15
-            thr_strategy = cv2.THRESH_BINARY_INV
+            thr_strategy = cv2.THRESH_BINARY_INV'''
 
-        obstacles_annotation = find_obstacles(gt,seg, depth_thr, segm_thr,thr_strategy, test_obstacles= False)
+        obstacles_annotation = find_obstacles(gt, seg, depth_thr, segm_thr, thr_strategy, test_obstacles=False)
 
 
         if obstacles_annotation is not None:
             print gt_path
             file_name_tmp = os.path.split(gt_path)[1]
             file_name = os.path.splitext(file_name_tmp)[0]+'.txt'
+            print(os.path.join(target_dir, file_name))
             obs_file = open(os.path.join(target_dir, file_name),'w')
 
             for annotation in obstacles_annotation:
